@@ -2,6 +2,7 @@
 
 from colors import colors
 
+import re
 import time
 import argparse
 import threading
@@ -16,7 +17,6 @@ import pickle
 import socket
 import uuid
 import hashlib
-import os
 import base64
 from textwrap import wrap
 
@@ -30,7 +30,7 @@ threadcomm = colors.fg.grey+threading.currentThread().getName()+" COMUNICACION:"
 threadend = colors.fg.blue2+threading.currentThread().getName()+" EXIT:"+colors.end
 threadwarning = colors.fg.yellow2+threading.currentThread().getName()+" WARNING:"+colors.end
 
-log = 0;
+log = False;
 
 # Funciones auxiliares
 
@@ -51,7 +51,7 @@ th_server = None	#Thread servidor de datos para aplicacion android
 
 def ctrlc_exit(sig, frame):
 
-	if log==1:
+	if log==True:
 		print(threadwarning,'Cerrando...')
 	
 	if th_adq:
@@ -63,7 +63,7 @@ def ctrlc_exit(sig, frame):
 		th_server.server=0
 
 
-	if log==1:
+	if log==True:
 		print(threadend,'Cierre completado')
 	os._exit(1)
 
@@ -73,7 +73,7 @@ def ctrlz_exit(sig, frame):
 
 	signal.signal(signal.SIGINT, ctrlc_exit)
 
-	if log==1:
+	if log==True:
 		print(threadwarning,'Esperando adq...')
 	
 	if th_adq:
@@ -81,7 +81,7 @@ def ctrlz_exit(sig, frame):
 		th_adq.adquiere=0
 		th_adq.join()
 
-	if log==1:
+	if log==True:
 		print(threadwarning,'Esperando server...')
 
 	if th_server:
@@ -89,11 +89,11 @@ def ctrlz_exit(sig, frame):
 		th_server.server=0
 		th_server.join()
 	
-	if log==1:
+	if log==True:
 		print(threadend,'Cierre completado')
 	os._exit(1)
 
-# Funcion inicializacion de bitalino
+# Clase sensores para identificarlos
 
 class sensors:
 
@@ -132,6 +132,9 @@ class sensors:
 	types.append(ECG)
 	types.append(ACC)
 
+# Funcion inicializacion de bitalino
+# Se añaden funciones para encender y apagar el led
+
 def bitalinoinit(macAddress):
 
 	dev = BITalino(macAddress,15)
@@ -149,7 +152,7 @@ def bitalinoinit(macAddress):
 
 # Threads
 
-macAddress = "98:D3:31:B2:14:90"
+# Thread ADQ: Recive los datos de bitalino, los procesa y los empaqueta
 
 samplingRate = 100
 nSamples = 50
@@ -182,7 +185,6 @@ def adq(q,bitalino):
 	threadcomm = '\t'+colors.fg.grey+threading.currentThread().getName()+" COMUNICACION:"+colors.end
 	threadend = '\t'+colors.fg.blue2+threading.currentThread().getName()+" EXIT:"+colors.end
 	threadwarning = '\t'+colors.fg.yellow2+threading.currentThread().getName()+" WARNING:"+colors.end
-
 	
 	buffertime = 10
 
@@ -196,7 +198,7 @@ def adq(q,bitalino):
 
 	bitalino.start(samplingRate, acqChannels)
 
-	if log==1:
+	if log==True:
 		print(threadsuccess,"ADQ Iniciado")
 
 	it = 0
@@ -214,7 +216,7 @@ def adq(q,bitalino):
 		try:
 			samples = bitalino.read(nSamples)
 		except Exception as e:
-			if log==1:
+			if log==True:
 				print(threadcritical,e)
 
 			try:
@@ -222,7 +224,7 @@ def adq(q,bitalino):
 
 			except Exception as e:
 		
-					if log==1:
+					if log==True:
 						print(threadcritical,"Error bluetooth conectando con el dispositivo,",e)
 
 			else:
@@ -386,6 +388,8 @@ def adq(q,bitalino):
 	bitalino.led_off()
 	bitalino.stop()
 
+# Thread SERVER: Servidor UPD para la aplicacion android
+# Se usa un socket no bloqueante para atender el servidor y la llegada de actualizaciones de samples sin quedarse esperando
 
 scan_keys = ["36dde7d288a2166a651d51ec6ded9e70e72cf6b366293d6f513c75393c57d6f33b949879b9d5e7f7c21cd8c02ede75e74fc54ea15bd043b4df008533fc68ae69"]
 
@@ -424,11 +428,11 @@ def server(q,):
 
 	except socket.error as e:
 
-		if log==1:
+		if log==True:
 			print(threaderror,"Error abriendo conexion en el puerto",server_port,e)
 		exit()
 
-	if log==1:
+	if log==True:
 		print(threadlog,"Escuchando conexiones en ",server_address,":",server_port)
 
 	commsock.settimeout(0.01)
@@ -454,7 +458,7 @@ def server(q,):
 
 		except:
 
-			if log==1:
+			if log==True:
 				print(threaderror,"La conexion se ha cerrado, reiniciando...")
 
 			storedata = {}
@@ -464,14 +468,16 @@ def server(q,):
 
 		else:
 
-			if log==1:
+			if log==True:
 				print(threadcomm,str(client_address)," >> ",data.decode())
 
 			query = json.loads(data.decode())
 
+			# Preparar respuesta para todos los comandos posibles
+
 			if query['command'] == Command.CHECK_ONLINE:
 
-				if log==1:
+				if log==True:
 					print(threadcomm,str(client_address)," >> Comprobando comunicacion")
 
 				# Comrpobar query['params']['scan_key']
@@ -492,9 +498,13 @@ def server(q,):
 
 					response['params'] = {}
 
+					# En caso errónero no se responde
+
+					continue
+
 			if query['command'] == Command.LOGIN:
 
-				if log==1:
+				if log==True:
 					print(threadcomm,str(client_address)," >> Haciendo Login")
 
 				# Crear UUID
@@ -506,7 +516,7 @@ def server(q,):
 				storedata['accesstoken'] = access_token
 				storedata['login_key'] = ""
 
-				if log==1:
+				if log==True:
 					print(threadsuccess, storedata['accesstoken'])
 
 				response = {}
@@ -519,7 +529,7 @@ def server(q,):
 			
 			if query['command'] == Command.GET_INFO:
 
-				if log==1:
+				if log==True:
 					print(threadcomm,str(client_address)," >> Obteniendo informacion")
 
 				# Comrpobar query['params']['login_token']
@@ -532,7 +542,7 @@ def server(q,):
 
 						a = storedata['accesstoken'] + pass_hash + k
 
-						if log==1:
+						if log==True:
 							print(threadwarning,storedata['accesstoken'],pass_hash,k)
 
 						posible_logins.append(hashlib.sha256(a.encode()).hexdigest())
@@ -594,7 +604,7 @@ def server(q,):
 
 			if query['command'] == Command.START_SAMPLES:
 
-				if log==1:
+				if log==True:
 					print(threadcomm,str(client_address)," >> Activando sampleo")
 
 				if storedata['login_key'] == "" and 'accesstoken' in storedata:
@@ -605,7 +615,7 @@ def server(q,):
 
 						a = storedata['accesstoken'] + pass_hash + k
 
-						if log==1:
+						if log==True:
 							print(threadwarning,storedata['accesstoken'],pass_hash,k)
 
 						posible_logins.append(hashlib.sha256(a.encode()).hexdigest())
@@ -639,7 +649,7 @@ def server(q,):
 
 			if query['command'] == Command.STOP_SAMPLES:
 
-				if log==1:
+				if log==True:
 					print(threadcomm,str(client_address)," >> Desactivando sampleo")
 
 				if storedata['login_key'] == "" and 'accesstoken' in storedata:
@@ -650,7 +660,7 @@ def server(q,):
 
 						a = storedata['accesstoken'] + pass_hash + k
 
-						if log==1:
+						if log==True:
 							print(threadwarning,storedata['accesstoken'],pass_hash,k)
 
 						posible_logins.append(hashlib.sha256(a.encode()).hexdigest())
@@ -682,7 +692,7 @@ def server(q,):
 
 			if query['command'] == Command.ASK_SAMPLE:
 
-				if log==1:
+				if log==True:
 					print(threadcomm,str(client_address)," >> Solicitando muestra")
 
 				if storedata['login_key'] == "" and 'accesstoken' in storedata:
@@ -693,7 +703,7 @@ def server(q,):
 
 						a = storedata['accesstoken'] + pass_hash + k
 
-						if log==1:
+						if log==True:
 							print(threadwarning,storedata['accesstoken'],pass_hash,k)
 
 						posible_logins.append(hashlib.sha256(a.encode()).hexdigest())
@@ -725,7 +735,7 @@ def server(q,):
 
 			if query['command'] == Command.ASK_IMAGE:
 
-				if log==1:
+				if log==True:
 					print(threadcomm,str(client_address)," >> Solicitando imagen")
 
 				if storedata['login_key'] == "" and 'accesstoken' in storedata:
@@ -736,7 +746,7 @@ def server(q,):
 
 						a = storedata['accesstoken'] + pass_hash + k
 
-						if log==1:
+						if log==True:
 							print(threadwarning,storedata['accesstoken'],pass_hash,k)
 
 						posible_logins.append(hashlib.sha256(a.encode()).hexdigest())
@@ -761,7 +771,7 @@ def server(q,):
 
 					except:
 
-						if log==1:
+						if log==True:
 							print(threaderror,"Error al abrir la captura")
 
 						response = {}
@@ -782,7 +792,7 @@ def server(q,):
 						image_chunks = wrap(encoded_image,chunksize)
 						nimage_chunks = len(image_chunks)
 
-						if log==1:
+						if log==True:
 							print(threadcomm,"Enviando imagen >> ", str(client_address))
 
 						response = {}
@@ -806,15 +816,17 @@ def server(q,):
 
 					response['params']['info'] = {}
 
+			# Enviar respuesta
+
 			if query['command'] in [Command.CHECK_ONLINE, Command.LOGIN, Command.GET_INFO, Command.START_SAMPLES, Command.STOP_SAMPLES, Command.ASK_SAMPLE, Command.ASK_IMAGE]:
 
 				response_string = json.dumps(response)
 
-				if log==1:
+				if log==True:
 					print(threadcomm,"Enviando respuesta ", response_string,">>",str(client_address))
 
 				commsock.sendto(response_string.encode(), client_address)
-					#response['params']['access_token'] = access_token
+				#response['params']['access_token'] = access_token
 
 				#print(threadcomm,str(client_address)," >> ",data.decode())
 				#sent = commsock.sendto(data, client_address)
@@ -832,7 +844,7 @@ def server(q,):
 
 					chunktosend_string = json.dumps(chunktosend)
 
-					if log==1:
+					if log==True:
 						print(threadcomm,"Enviando chunk de imagen ", chunktosend_string,">>",str(client_address))
 
 					commsock.sendto(chunktosend_string.encode(), client_address)
@@ -854,7 +866,8 @@ def server(q,):
 			commsock.settimeout(0.01)
 
 		sample = None
-		#if not q.empty():
+
+		# Reemplazo if not q.empty() para poder usar queue no bloqueante:
 
 		try:
 
@@ -892,12 +905,58 @@ if __name__ == "__main__":
 	threadend = colors.fg.blue2+threading.currentThread().getName()+" EXIT:"+colors.end
 	threadwarning = colors.fg.yellow2+threading.currentThread().getName()+" WARNING:"+colors.end
 
-	if len(sys.argv)>=1:
-		if sys.argv[1] == "--log":
-			log = 1
+
+	# Parsear argumentos
+
+	parser = argparse.ArgumentParser(
+			description="Procesador de monitorización de bitalino.",
+			epilog="Creado por Christian Martín y Borja Gómez")
+
+	parser._positionals.title = 'Positional arguments'
+	parser._optionals.title = 'Argumentos opcionales'
+	parser._actions[0].help='Mostrar ayuda del programa'
+		
+	parser.add_argument("-m","--mac",
+		action="store",
+		required=False,
+		help="Direccion MAC del dispositivo Bitalino.")
+
+	parser.add_argument("-l","--log",
+		action='store_true',
+		required=False,
+		help="Mostrar registro")
+
+	# parser.add_argument('-h', '--help',
+	# 	action='help',
+	# 	default=argparse.SUPPRESS,
+	# 	help='Mostrar ayuda')
+
+	args = parser.parse_args()
+
+	log = args.log
+
+	if args.mac != None:
+		if re.match("[0-9a-f]{2}([-:]?)[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", args.mac.lower()):
+
+			macAddress = args.mac
+
+			if log==True:
+				print(threadlog, "Utulizando dirección mac:", macAddress)
+
+		else:
+
+			print(threaderror, "La direccion mac introcucida no tiene formato válido.")
+			os._exit(1)
+	else:
+
+		#macAddress = "98:D3:31:B2:14:90"
+		macAddress = "0C:61:CF:29:8F:22"
+
+		if log==True:
+			print(threadlog, "Utulizando dirección mac por defecto:", macAddress)
 
 
-	if log==1:
+	if log==True:
 		print(threadlog, "Cargando...")
 
 	signal.signal(signal.SIGINT, ctrlc_exit)
@@ -907,19 +966,7 @@ if __name__ == "__main__":
 	else:
 		signal.signal(signal.SIGTSTP, ctrlz_exit)
 
-	# parser = argparse.ArgumentParser(
-	# 	description="Procesador de monitorización de bitalino.",
-	# 	epilog="Creado por Christian Martín y Borja Gómez")
-	
-	# parser.add_argument("-m","--mac",
-	# 	action="store",
-	# 	required=True,
-	# 	help="Direccion MAC del dispositivo Bitalino."
-	# 	)
-
-	# parser.parse_args([])
-
-	if log==1:
+	if log==True:
 		print(threadlog, "Contactando con bitalino")
 
 	#macAddress = "0C:61:CF:29:8F:22"
@@ -931,7 +978,7 @@ if __name__ == "__main__":
 
 	except Exception as e:
 		
-		if log==1:
+		if log==True:
 			print(threadcritical,"Error bluetooth conectando con el dispositivo,",e)
 
 	else:
@@ -940,18 +987,18 @@ if __name__ == "__main__":
 
 		bitalinoVersion = bitalino.version()
 
-		if log==1:
+		if log==True:
 			print(threadsuccess,"Conexion correcta con",bitalinoVersion)
 
 
-		if log==1:
+		if log==True:
 			print(threadlog,"Lanzando ADQ...")
 
 		th_adq = threading.Thread(name="ADQ",target=adq, args=(sample_queue,bitalino))
 		th_adq.start()
 
 
-	if log==1:
+	if log==True:
 		print(threadlog,"Lanzando Servidor...")
 
 	th_server = threading.Thread(name="Server",target=server, args=(sample_queue,))
