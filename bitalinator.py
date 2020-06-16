@@ -209,8 +209,6 @@ def adq(q,bitalino):
 
 		# Comprobar estado del bitalino
 
-		#print(bitalino.state())
-
 		bitalino.led_on(bitalino)
 
 		try:
@@ -232,11 +230,9 @@ def adq(q,bitalino):
 				bitalino.start(samplingRate, acqChannels)
 				continue
 
+		# Obtener captura almacenar y guardad
 
 		cap_time = int(round(time.time() * 1000))
-		
-		#print(samples)
-		#print(*samples, sep='\n')
 
 		RAW_EMG = samples[:,5+sensors.EMG].tolist()
 		RAW_EDA = samples[:,5+sensors.EDA].tolist()
@@ -245,16 +241,6 @@ def adq(q,bitalino):
 		RAW_LUX = samples[:,5+sensors.LUX].tolist()
 
 		bitalino.led_off(bitalino)
-
-		# bufferpos = 1+(nSamples * it) % (buffertime * samplingRate)
-
-		# print("Posicionbuffer",bufferpos)
-
-		# EMG_buffer[bufferpos] = RAW_EMG
-		# EDA_buffer[bufferpos] = RAW_EDA
-		# ECG_buffer[bufferpos] = RAW_ECG
-		# ACC_buffer[bufferpos] = RAW_ACC
-		# LUX_buffer[bufferpos] = RAW_LUX
 
 		EMG_buffer[nSamples : len(EMG_buffer)] = EMG_buffer[0 : len(EMG_buffer) - nSamples]
 		EDA_buffer[nSamples : len(EDA_buffer)] = EDA_buffer[0 : len(EDA_buffer) - nSamples]
@@ -281,11 +267,11 @@ def adq(q,bitalino):
 
 		# ECG
 
-		ecg_upper_th = 30
-
 		# ACC
 
 		# LUX
+
+		# Funciones para el procesado de la señal
 
 		def proc_emg():
 
@@ -308,29 +294,6 @@ def adq(q,bitalino):
 		def proc_ecg():
 
 			#print(threadlog,"Procesando ECG...")
-
-			#ecg_data = RAW_ECG
-
-
-			# calcular media
-
-			#ecg_mean = mean(ecg_data)
-
-			# buscar picos superiores
-
-			#upper_peak = [i for i in range(len(ecg_data)) if ecg_data[i] > ecg_mean + ecg_upper_th]
-			#lower_peak = [i for i in range(len(ecg_data)) if ecg_data[i] < ecg_mean + ecg_lower_th]
-
-			#if upper_peak and lower_peak:
-
-				#print(upper_peak,lower_peak)
-
-			# Calcular latido en todo el buffer
-			# Buscar el máximo de la señal
-
-			max_peak = max(ECG_buffer)
-
-			upper_peak = [i for i in range(len(ECG_buffer)) if ECG_buffer[i] > max_peak - ecg_upper_th]
 
 			sensordata['sensors'].insert(sensors.ECG,{})
 			sensordata['sensors'][sensors.ECG]['variables'] = []
@@ -370,14 +333,18 @@ def adq(q,bitalino):
 					sensors.LUX: proc_lux
 		}
 
+		# Ejecutar funciones de procesamiento
+
 		for i,s in enumerate(sns,0):
 			sns[i]()
 
 		it = it + 1
 
+		# Volcar datos en JSON
+
 		app_json = json.dumps(sensordata)
-		#print(app_json)
-		#print(repr(sensordata),"\n\n\n\n\n")
+
+		# Poner en cola para enviar
 
 		q.put(sensordata)
 
@@ -572,25 +539,11 @@ def server(q,):
 					response['params']['info']['nSamples'] = nSamples
 					response['params']['info']['sensorInfo'] = []
 
-					#for i,s in enumerate(sensors.name):
-
-					#	sensorInfo = {}
-					#	sensorInfo[s] = sensors.stype[s]
-					
-					#	response['params']['info']['sensorInfo'].append(sensorInfo)
-
-					#for i,s in enumerate(sensors.types):
-
-						#response['params']['info']['sensorInfo'].insert(i,s)
-					
-
 					response['params']['info']['sensorInfo'].insert(len(response['params']['info']['sensorInfo']),sensors.EMG)
 					response['params']['info']['sensorInfo'].insert(len(response['params']['info']['sensorInfo']),sensors.EDA)
 					response['params']['info']['sensorInfo'].insert(len(response['params']['info']['sensorInfo']),sensors.ECG)
 					response['params']['info']['sensorInfo'].insert(len(response['params']['info']['sensorInfo']),sensors.ACC)
 					response['params']['info']['sensorInfo'].insert(len(response['params']['info']['sensorInfo']),sensors.LUX)
-					
-					
 
 				else:
 
@@ -762,12 +715,9 @@ def server(q,):
 					try:
 
 						with open("/tmp/robonitor/cap.jpg", "rb") as image_file:
-						
-						#with open("C:\\cap-min.jpg", "rb") as image_file:
-							#encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
+
 							encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
 							encoded_imagesize = len(encoded_image)
-							
 
 					except:
 
@@ -905,7 +855,6 @@ if __name__ == "__main__":
 	threadend = colors.fg.blue2+threading.currentThread().getName()+" EXIT:"+colors.end
 	threadwarning = colors.fg.yellow2+threading.currentThread().getName()+" WARNING:"+colors.end
 
-
 	# Parsear argumentos
 
 	parser = argparse.ArgumentParser(
@@ -925,11 +874,6 @@ if __name__ == "__main__":
 		action='store_true',
 		required=False,
 		help="Mostrar registro")
-
-	# parser.add_argument('-h', '--help',
-	# 	action='help',
-	# 	default=argparse.SUPPRESS,
-	# 	help='Mostrar ayuda')
 
 	args = parser.parse_args()
 
@@ -968,8 +912,6 @@ if __name__ == "__main__":
 
 	if log==True:
 		print(threadlog, "Contactando con bitalino")
-
-	#macAddress = "0C:61:CF:29:8F:22"
 
 	batteryThreshold = 30
 
